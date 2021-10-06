@@ -2,7 +2,6 @@ import json
 import subprocess
 
 import pytest
-
 from helpers import cmd
 
 
