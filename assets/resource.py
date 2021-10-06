@@ -5,6 +5,7 @@ import logging as log
 import os
 import sys
 import tempfile
+from ast import literal_eval
 
 import requests
 
@@ -22,11 +23,12 @@ class HTTPResource:
         ssl_verify = data.get('ssl_verify', True)
         ok_responses = data.get('ok_responses', [200, 201, 202, 204])
         form_data = data.get('form_data')
+        verify = False
 
         if isinstance(ssl_verify, bool):
             verify = ssl_verify
         elif isinstance(ssl_verify, str):
-            verify = str(tempfile.NamedTemporaryFile(delete=False, prefix='ssl-').write(verify))
+            verify = str(tempfile.NamedTemporaryFile(delete=False, prefix='ssl-').write(str.encode(ssl_verify)))
 
         request_data = None
         if form_data:
@@ -41,7 +43,7 @@ class HTTPResource:
         if response.status_code not in ok_responses:
             raise Exception('Unexpected response {}'.format(response.status_code))
 
-        return (response.status_code, response.text)
+        return response.status_code, response.text
 
     def run(self, command_name: str, json_data: str, command_argument: str):
         """Parse input/arguments, perform requested command return output."""
@@ -77,7 +79,7 @@ class HTTPResource:
         values.update(params)
 
         # apply templating of environment variables onto parameters
-        rendered_params = self._interpolate(params, values)
+        rendered_params = self._interpolate(params, self._read_file_as_text(values))
 
         status_code, text = self.cmd(command_argument, rendered_params)
 
@@ -93,14 +95,45 @@ class HTTPResource:
         """Recursively apply values using format on all string key and values in data."""
 
         if isinstance(data, str):
-            return data.format(**values)
+            formatted_data = data.format(**values)
+            try:
+                evaluated_data = literal_eval(formatted_data)
+                if isinstance(evaluated_data, list) or isinstance(evaluated_data, dict):
+                    return evaluated_data
+            except Exception:
+                pass
+            return formatted_data
         elif isinstance(data, list):
             return [self._interpolate(x, values) for x in data]
         elif isinstance(data, dict):
-            return {self._interpolate(k, values): self._interpolate(v, values)
-                    for k, v in data.items()}
+            return {
+                self._interpolate(k, values): self._interpolate(v, values)
+                for k, v in data.items()
+            }
         else:
             return data
+
+    def _read_file_as_text(self, values):
+        """Recursively replace file references with their contents."""
+
+        if isinstance(values, str):
+            if values.startswith('file:'):
+                with open('/tmp/build/put/' + values.partition('file:')[2].strip()) as file:
+                    values = file.read().strip()
+                try:
+                    return json.loads(values)
+                except ValueError:
+                    pass
+            return values
+        elif isinstance(values, list):
+            return [self._read_file_as_text(x) for x in values]
+        elif isinstance(values, dict):
+            return {
+                self._read_file_as_text(k): self._read_file_as_text(v)
+                for k, v in values.items()
+            }
+        else:
+            return values
 
 
 print(HTTPResource().run(os.path.basename(__file__), sys.stdin.read(), sys.argv[1:]))

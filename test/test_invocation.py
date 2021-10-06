@@ -60,6 +60,46 @@ def test_json(httpbin):
     assert output['version'] == {}
 
 
+def test_json_with_files(httpbin):
+    """Json should be passed as JSON content."""
+
+    source = {
+        'uri': httpbin + '/post',
+        'method': 'POST',
+        'json': {
+            'test': 123,
+            'hostname': '{hostname}',
+            'foo': '{foo}',
+            'spec': '{spec}'
+        },
+        'version': {}
+    }
+
+    params = {
+        'hostname': "file:hostname",
+        'foo': "file:test.json",
+        'spec': {
+          "data": {
+            "application": {
+              "id": "aa08436a-45c7-4a6c-b6e4-5d38c0da0c49"
+            },
+            "dockerImage": {
+              "tag": "file:hostname"
+            }
+          },
+          "type": "docker-image-pushed"
+        }
+    }
+
+    output = cmd('out', source, params=params)
+
+    assert output['json']['test'] == 123
+    assert output['json']['hostname'] == 'super_hostname'
+    assert output['json']['foo'] == {"foo": "bar"}
+    assert output['json']['spec']['data']['dockerImage']['tag'] == 'super_hostname'
+    assert output['version'] == {}
+
+
 def test_interpolation(httpbin):
     """Values should be interpolated recursively."""
 
