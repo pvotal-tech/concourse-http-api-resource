@@ -33,7 +33,9 @@ class HTTPResource:
         request_data = None
         if form_data:
             request_data = {k: json.dumps(v, ensure_ascii=False) for k, v in form_data.items()}
-
+        
+        log.info('sending request: %s', request_data)
+        
         response = requests.request(method, uri, json=json_data,
                                     data=request_data, headers=headers, verify=verify)
 
